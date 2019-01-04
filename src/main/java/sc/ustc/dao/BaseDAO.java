@@ -53,8 +53,8 @@ public abstract class BaseDAO {
 		return result;
 	}
 	
-	public abstract Object query(String sql);
-	public abstract boolean insert(String sql);
-	public abstract boolean update(String sql);
-	public abstract boolean delete (String sql);
+	public abstract <T> T query(T obj, Class<T> clazz);
+	public abstract <T> boolean insert(T obj, Class<T> clazz);
+	public abstract <T> boolean update(T obj, Class<T> clazz);
+	public abstract <T> boolean delete (T obj, Class<T> clazz);
 }

@@ -155,7 +155,7 @@ public class SimpleController extends HttpServlet{
 			actionBean.setResultValue(value);
 			
 			if (value.endsWith("_view.xml")) {
-				resp.getWriter().write(XMLUtil.ConvertXml2Html("/success_view.xsl", "/success_view.xml").toString());
+				resp.getWriter().write(XMLUtil.XMLtoHTML("/success_view.xsl", "/success_view.xml").toString());
 			} else if ("forward".equals(type)) {
 				req.getRequestDispatcher(value).forward(req, resp);
 			} else if ("redirect".equals(type)) {

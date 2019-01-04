@@ -49,7 +49,16 @@ public class XMLUtil {
 		return result;
 	}
 	
-	public static ByteArrayOutputStream ConvertXml2Html(String xsl_path,String xml_path){
+	public static String getPropertyValueFromList(List<Element> src, String targetName) {
+		for (Element element : src) {
+			if (targetName.equals(element.elementText("name"))) {
+				return element.elementText("value");
+			}
+		}
+		return null;
+	}
+	
+	public static ByteArrayOutputStream XMLtoHTML(String xsl_path,String xml_path){
 		ByteArrayOutputStream result = null;
 		try {
 			StreamSource source_xsl = new StreamSource(
