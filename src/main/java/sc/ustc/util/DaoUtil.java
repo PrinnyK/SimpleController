@@ -16,8 +16,9 @@ public class DaoUtil {
 		return "set" + String.valueOf(buf);
 	}
 	
-	public static <T> Object getPropertyValue(T obj, Class<T> clazz, String propertyName) {
+	public static <T> Object getPropertyValue(T obj, String propertyName) {
 		try {
+			Class<T> clazz = (Class<T>) obj.getClass();
 			Method method = clazz.getMethod(getGetterName(propertyName));
 			return method.invoke(obj);
 		} catch (NoSuchMethodException e) {
@@ -39,8 +40,9 @@ public class DaoUtil {
 		return null;
 	}
 	
-	public static <T> void setPropertyValue(T obj, Class<T> clazz, String propertyName, Object value, Class<?> type) {
+	public static <T> void setPropertyValue(T obj, String propertyName, Object value, Class<?> type) {
 		try {
+			Class<T> clazz = (Class<T>) obj.getClass();
 			Method method = clazz.getMethod(getSetterName(propertyName), type);
 			method.invoke(obj, value);
 		} catch (NoSuchMethodException e) {

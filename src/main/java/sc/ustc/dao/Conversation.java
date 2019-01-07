@@ -1,20 +1,23 @@
 package sc.ustc.dao;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.sf.cglib.proxy.Enhancer;
 import sc.ustc.bean.ClassBean;
 import sc.ustc.bean.PropertyBean;
 import sc.ustc.util.DaoUtil;
 
 public class Conversation {
 	
-	public static <T> Boolean insertObject(Connection connection, T obj, Class<T> clazz) {
+	public static <T> Boolean insertObject(Connection connection, T obj) {
 		// build sql
 		String sql = "insert into ";
+		Class<T> clazz = (Class<T>) obj.getClass();
 		String className = clazz.getSimpleName();
 		ClassBean classBean = Configuration.getClassInfo(className);
 
@@ -24,7 +27,7 @@ public class Conversation {
 		List<String> columns = new ArrayList<>();
 		List<String> values = new ArrayList<>();
 		for (PropertyBean propertyBean : classBean.getPropertyBeanList()) {
-			Object propertyValue = DaoUtil.getPropertyValue(obj, clazz, propertyBean.getName());
+			Object propertyValue = DaoUtil.getPropertyValue(obj, propertyBean.getName());
 			if (null != propertyValue) {
 				columns.add(propertyBean.getColumn());
 				values.add("'" + (String)propertyValue + "'");
@@ -42,24 +45,29 @@ public class Conversation {
 		return false;
 	}
 	
-	public static <T> T getObject(Connection connection, T obj, Class<T> clazz) {
-		// build sql
-		String sql = "select * from ";
-		String condition = "where ";
+	public static <T> T getObject(Connection connection, T obj) {
+		// get class bean
+		Class<T> clazz = (Class<T>) obj.getClass();
 		String className = clazz.getSimpleName();
 		ClassBean classBean = Configuration.getClassInfo(className);
 
+		// get table
 		String table = classBean.getTable();
-		sql = sql + table + " ";
 
+		// get condition and non-lazy property
+		String condition = "";
 		String idName = classBean.getIdName();
-		int id = (int) DaoUtil.getPropertyValue(obj, clazz, idName);
+		int id = (int) DaoUtil.getPropertyValue(obj, idName);
 		if (id > 0) {
 			condition = condition + "id = " + id;
 		}
-
+		List<String> properties = new ArrayList<>();
+		properties.add("id");
 		for (PropertyBean propertyBean : classBean.getPropertyBeanList()) {
-			Object propertyValue = DaoUtil.getPropertyValue(obj, clazz, propertyBean.getName());
+			if (propertyBean.getLazy().equalsIgnoreCase("false")) {
+				properties.add(propertyBean.getColumn());
+			}
+			Object propertyValue = DaoUtil.getPropertyValue(obj, propertyBean.getName());
 			if (null != propertyValue) {
 				if (condition.contains("=")) {
 					condition += " and ";
@@ -67,36 +75,47 @@ public class Conversation {
 				condition = condition + propertyBean.getColumn() + " = '" + (String) propertyValue + "'";
 			}
 		}
-		sql += condition;
-
-		// get resultSet and build bean
-		try (Statement stat = connection.createStatement();) {
-			ResultSet resultSet = stat.executeQuery(sql);
-
+		String property = String.join(", ", properties); 
+		
+		String preSql = "select %s from %s where %s";
+		try (PreparedStatement pstat = connection.prepareStatement(preSql);
+				Statement statement = connection.createStatement();) {
+			String sql = String.format(preSql, property, table, condition);
+			ResultSet resultSet = statement.executeQuery(sql);
 			if (resultSet.next()) {
-				T result = clazz.getConstructor().newInstance();
+				// set non-lazy property
 				Object resultId = resultSet.getObject("id");
-				Class<?> resultIdType = DaoUtil.getType("int");
-				DaoUtil.setPropertyValue(result, clazz, classBean.getIdName(), resultId, resultIdType);
-
+				LazyProxy lazyProxy = new LazyProxy();
+				lazyProxy.setClassBean(classBean);
+				lazyProxy.setJdbcBean(Configuration.getJDBCconfig());
+				lazyProxy.setId((int)resultId);
+				Enhancer enhancer = new Enhancer();
+				enhancer.setSuperclass(clazz);
+				enhancer.setCallback(lazyProxy);
+				T result = (T) enhancer.create();
+				
+				DaoUtil.setPropertyValue(result, classBean.getIdName(), resultId, int.class);
 				for (PropertyBean propertyBean : classBean.getPropertyBeanList()) {
-					Object resultValue = resultSet.getObject(propertyBean.getColumn());
-					Class<?> resultValueType = DaoUtil.getType(propertyBean.getType());
-					DaoUtil.setPropertyValue(result, clazz, propertyBean.getName(), resultValue, resultValueType);
+					if (propertyBean.getLazy().equalsIgnoreCase("false")) {
+						Object resultValue = resultSet.getObject(propertyBean.getColumn());
+						DaoUtil.setPropertyValue(result, propertyBean.getName(), resultValue, resultValue.getClass());
+					}
 				}
 
 				return result;
 			}
 		} catch (Exception e) {
 			// TODO: handle exception
+			e.printStackTrace();
 		}
 
 		return null;
 	}
 	
-	public static <T> Boolean updateObject(Connection connection, T obj, Class<T> clazz) {
+	public static <T> Boolean updateObject(Connection connection, T obj) {
 		// build sql
 		String sql = "update ";
+		Class<T> clazz = (Class<T>) obj.getClass();
 		String className = clazz.getSimpleName();
 		ClassBean classBean = Configuration.getClassInfo(className);
 
@@ -105,14 +124,14 @@ public class Conversation {
 
 		List<String> columns = new ArrayList<>();
 		for (PropertyBean propertyBean : classBean.getPropertyBeanList()) {
-			Object propertyValue = DaoUtil.getPropertyValue(obj, clazz, propertyBean.getName());
+			Object propertyValue = DaoUtil.getPropertyValue(obj, propertyBean.getName());
 			if (null != propertyValue) {
 				columns.add(propertyBean.getColumn() + " = '" + (String)propertyValue + "'");
 			}
 		}
 		
 		String condition = " where ";
-		int id = (int) DaoUtil.getPropertyValue(obj, clazz, classBean.getIdName());
+		int id = (int) DaoUtil.getPropertyValue(obj, classBean.getIdName());
 		if (id > 0) {
 			condition = condition + "id = " + id;
 		}
@@ -129,9 +148,10 @@ public class Conversation {
 		return false;
 	}
 	
-	public static <T> Boolean deleteObject(Connection connection, T obj, Class<T> clazz) {
+	public static <T> Boolean deleteObject(Connection connection, T obj) {
 		// build sql
 		String sql = "delete from ";
+		Class<T> clazz = (Class<T>) obj.getClass();
 		String className = clazz.getSimpleName();
 		ClassBean classBean = Configuration.getClassInfo(className);
 
@@ -139,7 +159,7 @@ public class Conversation {
 		sql = sql + table + " ";
 
 		String condition = "where ";
-		int id = (int) DaoUtil.getPropertyValue(obj, clazz, classBean.getIdName());
+		int id = (int) DaoUtil.getPropertyValue(obj, classBean.getIdName());
 		if (id > 0) {
 			condition = condition + "id = " + id;
 		}
